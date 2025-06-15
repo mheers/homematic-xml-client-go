@@ -153,6 +153,48 @@ type APIResponse struct {
 	Version         string           `xml:"version"`
 }
 
+// DeviceListResponse represents the devicelist.cgi response
+type DeviceListResponse struct {
+	XMLName xml.Name `xml:"deviceList"`
+	Devices []Device `xml:"device"`
+}
+
+// StateListResponse represents the statelist.cgi response
+type StateListResponse struct {
+	XMLName xml.Name `xml:"stateList"`
+	Devices []Device `xml:"device"`
+}
+
+// ProgramListResponse represents the programlist.cgi response
+type ProgramListResponse struct {
+	XMLName  xml.Name  `xml:"programList"`
+	Programs []Program `xml:"program"`
+}
+
+// RoomListResponse represents the roomlist.cgi response
+type RoomListResponse struct {
+	XMLName xml.Name `xml:"roomList"`
+	Rooms   []Room   `xml:"room"`
+}
+
+// FunctionListResponse represents the functionlist.cgi response
+type FunctionListResponse struct {
+	XMLName   xml.Name   `xml:"functionList"`
+	Functions []Function `xml:"function"`
+}
+
+// SystemVariableListResponse represents the sysvarlist.cgi response
+type SystemVariableListResponse struct {
+	XMLName         xml.Name         `xml:"systemVariables"`
+	SystemVariables []SystemVariable `xml:"systemVariable"`
+}
+
+// DeviceTypeListResponse represents the devicetypelist.cgi response
+type DeviceTypeListResponse struct {
+	XMLName     xml.Name     `xml:"deviceTypes"`
+	DeviceTypes []DeviceType `xml:"deviceType"`
+}
+
 // VersionResponse represents the version endpoint response
 type VersionResponse struct {
 	XMLName xml.Name `xml:"version"`
@@ -327,20 +369,40 @@ func (c *Client) GetDeviceList(deviceIDs []string, showInternal, showRemote bool
 		params["show_remote"] = "1"
 	}
 
-	resp, err := c.makeRequest("devicelist.cgi", params)
+	body, err := c.makeRawRequest("devicelist.cgi", params)
 	if err != nil {
 		return nil, err
 	}
-	return resp.Devices, nil
+
+	// Create XML decoder with charset reader support
+	decoder := xml.NewDecoder(bytes.NewReader(body))
+	decoder.CharsetReader = charsetReader
+
+	var result DeviceListResponse
+	if err := decoder.Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to parse XML: %w", err)
+	}
+
+	return result.Devices, nil
 }
 
 // GetDeviceTypes returns all possible device types
 func (c *Client) GetDeviceTypes() ([]DeviceType, error) {
-	resp, err := c.makeRequest("devicetypelist.cgi", nil)
+	body, err := c.makeRawRequest("devicetypelist.cgi", nil)
 	if err != nil {
 		return nil, err
 	}
-	return resp.DeviceTypes, nil
+
+	// Create XML decoder with charset reader support
+	decoder := xml.NewDecoder(bytes.NewReader(body))
+	decoder.CharsetReader = charsetReader
+
+	var result DeviceTypeListResponse
+	if err := decoder.Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to parse XML: %w", err)
+	}
+
+	return result.DeviceTypes, nil
 }
 
 // GetStateList returns all devices with their current values
@@ -357,11 +419,21 @@ func (c *Client) GetStateList(deviceID string, showInternal, showRemote bool) ([
 		params["show_remote"] = "1"
 	}
 
-	resp, err := c.makeRequest("statelist.cgi", params)
+	body, err := c.makeRawRequest("statelist.cgi", params)
 	if err != nil {
 		return nil, err
 	}
-	return resp.Devices, nil
+
+	// Create XML decoder with charset reader support
+	decoder := xml.NewDecoder(bytes.NewReader(body))
+	decoder.CharsetReader = charsetReader
+
+	var result StateListResponse
+	if err := decoder.Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to parse XML: %w", err)
+	}
+
+	return result.Devices, nil
 }
 
 // GetState returns specific devices/channels with their current values
@@ -378,11 +450,21 @@ func (c *Client) GetState(deviceIDs, channelIDs, datapointIDs []string) ([]Devic
 		params["datapoint_id"] = strings.Join(datapointIDs, ",")
 	}
 
-	resp, err := c.makeRequest("state.cgi", params)
+	body, err := c.makeRawRequest("state.cgi", params)
 	if err != nil {
 		return nil, err
 	}
-	return resp.Devices, nil
+
+	// Create XML decoder with charset reader support
+	decoder := xml.NewDecoder(bytes.NewReader(body))
+	decoder.CharsetReader = charsetReader
+
+	var result StateListResponse
+	if err := decoder.Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to parse XML: %w", err)
+	}
+
+	return result.Devices, nil
 }
 
 // ChangeState changes the state of one or more devices
@@ -402,11 +484,21 @@ func (c *Client) ChangeState(deviceIDs, newValues []string) error {
 
 // GetProgramList returns all programs
 func (c *Client) GetProgramList() ([]Program, error) {
-	resp, err := c.makeRequest("programlist.cgi", nil)
+	body, err := c.makeRawRequest("programlist.cgi", nil)
 	if err != nil {
 		return nil, err
 	}
-	return resp.Programs, nil
+
+	// Create XML decoder with charset reader support
+	decoder := xml.NewDecoder(bytes.NewReader(body))
+	decoder.CharsetReader = charsetReader
+
+	var result ProgramListResponse
+	if err := decoder.Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to parse XML: %w", err)
+	}
+
+	return result.Programs, nil
 }
 
 // RunProgram starts a program with the specified ID
@@ -441,20 +533,40 @@ func (c *Client) ChangeProgramActions(programID string, active, visible *bool) e
 
 // GetRoomList returns all configured rooms including channels
 func (c *Client) GetRoomList() ([]Room, error) {
-	resp, err := c.makeRequest("roomlist.cgi", nil)
+	body, err := c.makeRawRequest("roomlist.cgi", nil)
 	if err != nil {
 		return nil, err
 	}
-	return resp.Rooms, nil
+
+	// Create XML decoder with charset reader support
+	decoder := xml.NewDecoder(bytes.NewReader(body))
+	decoder.CharsetReader = charsetReader
+
+	var result RoomListResponse
+	if err := decoder.Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to parse XML: %w", err)
+	}
+
+	return result.Rooms, nil
 }
 
 // GetFunctionList returns all functions including channels
 func (c *Client) GetFunctionList() ([]Function, error) {
-	resp, err := c.makeRequest("functionlist.cgi", nil)
+	body, err := c.makeRawRequest("functionlist.cgi", nil)
 	if err != nil {
 		return nil, err
 	}
-	return resp.Functions, nil
+
+	// Create XML decoder with charset reader support
+	decoder := xml.NewDecoder(bytes.NewReader(body))
+	decoder.CharsetReader = charsetReader
+
+	var result FunctionListResponse
+	if err := decoder.Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to parse XML: %w", err)
+	}
+
+	return result.Functions, nil
 }
 
 // GetSystemVariableList returns all system variables
@@ -466,11 +578,21 @@ func (c *Client) GetSystemVariableList(showText bool) ([]SystemVariable, error) 
 		params["text"] = "false"
 	}
 
-	resp, err := c.makeRequest("sysvarlist.cgi", params)
+	body, err := c.makeRawRequest("sysvarlist.cgi", params)
 	if err != nil {
 		return nil, err
 	}
-	return resp.SystemVariables, nil
+
+	// Create XML decoder with charset reader support
+	decoder := xml.NewDecoder(bytes.NewReader(body))
+	decoder.CharsetReader = charsetReader
+
+	var result SystemVariableListResponse
+	if err := decoder.Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to parse XML: %w", err)
+	}
+
+	return result.SystemVariables, nil
 }
 
 // GetSystemVariable returns a single system variable
@@ -484,16 +606,25 @@ func (c *Client) GetSystemVariable(iseID string, showText bool) (*SystemVariable
 		params["text"] = "false"
 	}
 
-	resp, err := c.makeRequest("sysvar.cgi", params)
+	body, err := c.makeRawRequest("sysvar.cgi", params)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(resp.SystemVariables) == 0 {
+	// Create XML decoder with charset reader support
+	decoder := xml.NewDecoder(bytes.NewReader(body))
+	decoder.CharsetReader = charsetReader
+
+	var result SystemVariableListResponse
+	if err := decoder.Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to parse XML: %w", err)
+	}
+
+	if len(result.SystemVariables) == 0 {
 		return nil, fmt.Errorf("system variable not found")
 	}
 
-	return &resp.SystemVariables[0], nil
+	return &result.SystemVariables[0], nil
 }
 
 // RegisterToken registers a new security access token
@@ -527,11 +658,21 @@ func (c *Client) GetMasterValue(deviceIDs, requestedNames []string) ([]Device, e
 		params["requested_names"] = strings.Join(requestedNames, ",")
 	}
 
-	resp, err := c.makeRequest("mastervalue.cgi", params)
+	body, err := c.makeRawRequest("mastervalue.cgi", params)
 	if err != nil {
 		return nil, err
 	}
-	return resp.Devices, nil
+
+	// Create XML decoder with charset reader support
+	decoder := xml.NewDecoder(bytes.NewReader(body))
+	decoder.CharsetReader = charsetReader
+
+	var result DeviceListResponse
+	if err := decoder.Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to parse XML: %w", err)
+	}
+
+	return result.Devices, nil
 }
 
 // ChangeMasterValue sets master values for devices
