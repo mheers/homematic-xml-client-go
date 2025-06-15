@@ -409,9 +409,6 @@ func (c *Client) GetDeviceTypes() ([]DeviceType, error) {
 func (c *Client) GetStateList(deviceID string, showInternal, showRemote bool) ([]Device, error) {
 	params := make(map[string]string)
 
-	if deviceID != "" {
-		params["ise_id"] = deviceID
-	}
 	if showInternal {
 		params["show_internal"] = "1"
 	}
@@ -431,6 +428,17 @@ func (c *Client) GetStateList(deviceID string, showInternal, showRemote bool) ([
 	var result StateListResponse
 	if err := decoder.Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to parse XML: %w", err)
+	}
+
+	if deviceID != "" {
+		// Filter devices by deviceID if provided
+		filteredDevices := make([]Device, 0)
+		for _, device := range result.Devices {
+			if device.IseID == deviceID {
+				filteredDevices = append(filteredDevices, device)
+			}
+		}
+		return filteredDevices, nil
 	}
 
 	return result.Devices, nil
