@@ -1,6 +1,8 @@
 package homematic
 
 import (
+	"bytes"
+	"crypto/tls"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -9,6 +11,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
+
+	"golang.org/x/text/encoding/charmap"
+	"golang.org/x/text/transform"
 )
 
 // Client represents a HomeMatic XML-API client
@@ -20,12 +26,18 @@ type Client struct {
 
 // NewClient creates a new HomeMatic XML-API client
 func NewClient(baseURL, token string) *Client {
-	return &Client{
-		BaseURL: baseURL,
-		Token:   token,
-		HTTPClient: &http.Client{
-			Timeout: 30 * time.Second,
+	// a http client that uses insecure TLS settings
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
+		Timeout: 30 * time.Second,
+	}
+
+	return &Client{
+		BaseURL:    baseURL,
+		Token:      token,
+		HTTPClient: client,
 	}
 }
 
@@ -141,6 +153,52 @@ type APIResponse struct {
 	Version         string           `xml:"version"`
 }
 
+// charsetReader handles different character encodings for XML parsing
+func charsetReader(charset string, input io.Reader) (io.Reader, error) {
+	switch strings.ToLower(charset) {
+	case "iso-8859-1", "latin1":
+		return transform.NewReader(input, charmap.ISO8859_1.NewDecoder()), nil
+	case "windows-1252", "cp1252":
+		return transform.NewReader(input, charmap.Windows1252.NewDecoder()), nil
+	default:
+		return nil, fmt.Errorf("unsupported charset: %s", charset)
+	}
+}
+
+// convertToUTF8 converts XML content to UTF-8 if needed
+func convertToUTF8(data []byte) ([]byte, error) {
+	// Check if already UTF-8
+	if utf8.Valid(data) {
+		return data, nil
+	}
+
+	// Try to detect encoding from XML declaration
+	xmlDecl := string(data[:min(len(data), 200)])
+	if strings.Contains(strings.ToLower(xmlDecl), "iso-8859-1") ||
+		strings.Contains(strings.ToLower(xmlDecl), "latin1") {
+		decoder := charmap.ISO8859_1.NewDecoder()
+		utf8Data, err := decoder.Bytes(data)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert from ISO-8859-1: %w", err)
+		}
+		// Replace encoding declaration with UTF-8
+		utf8String := string(utf8Data)
+		utf8String = strings.ReplaceAll(utf8String, "ISO-8859-1", "UTF-8")
+		utf8String = strings.ReplaceAll(utf8String, "iso-8859-1", "utf-8")
+		return []byte(utf8String), nil
+	}
+
+	return data, nil
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // makeRequest performs an HTTP request to the XML-API
 func (c *Client) makeRequest(endpoint string, params map[string]string) (*APIResponse, error) {
 	u, err := url.Parse(fmt.Sprintf("%s/addons/xmlapi/%s", c.BaseURL, endpoint))
@@ -172,8 +230,18 @@ func (c *Client) makeRequest(endpoint string, params map[string]string) (*APIRes
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
+	// Convert to UTF-8 if needed
+	utf8Body, err := convertToUTF8(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert encoding: %w", err)
+	}
+
+	// Create XML decoder with charset reader support
+	decoder := xml.NewDecoder(bytes.NewReader(utf8Body))
+	decoder.CharsetReader = charsetReader
+
 	var result APIResponse
-	if err := xml.Unmarshal(body, &result); err != nil {
+	if err := decoder.Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to parse XML: %w", err)
 	}
 
@@ -425,3 +493,58 @@ func (c *Client) ChangeMasterValue(deviceIDs, names, values []string) error {
 	_, err := c.makeRequest("mastervaluechange.cgi", params)
 	return err
 }
+
+// Example usage function
+func ExampleUsage() {
+	// Create a new client
+	client := NewClient("https://192.168.1.100", "your-token-here")
+
+	// Get API version
+	version, err := client.GetVersion()
+	if err != nil {
+		fmt.Printf("Error getting version: %v\n", err)
+		return
+	}
+	fmt.Printf("XML-API Version: %s\n", version)
+
+	// Get all devices
+	devices, err := client.GetDeviceList(nil, false, false)
+	if err != nil {
+		fmt.Printf("Error getting devices: %v\n", err)
+		return
+	}
+
+	for _, device := range devices {
+		fmt.Printf("Device: %s (ID: %s, Type: %s)\n",
+			device.Name, device.IseID, device.DeviceType)
+	}
+
+	// Change device state (example: set dimmer to 20%)
+	err = client.ChangeState([]string{"12345"}, []string{"0.20"})
+	if err != nil {
+		fmt.Printf("Error changing state: %v\n", err)
+		return
+	}
+
+	// Run a program
+	err = client.RunProgram("1234", false)
+	if err != nil {
+		fmt.Printf("Error running program: %v\n", err)
+		return
+	}
+
+	// Get system variables
+	sysVars, err := client.GetSystemVariableList(true)
+	if err != nil {
+		fmt.Printf("Error getting system variables: %v\n", err)
+		return
+	}
+
+	for _, sysVar := range sysVars {
+		fmt.Printf("System Variable: %s = %s\n", sysVar.Name, sysVar.Value)
+	}
+}
+
+// Installation instructions:
+// To use this client, you need to install the required dependency:
+// go get golang.org/x/text
