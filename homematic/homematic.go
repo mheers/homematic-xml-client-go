@@ -153,6 +153,12 @@ type APIResponse struct {
 	Version         string           `xml:"version"`
 }
 
+// VersionResponse represents the version endpoint response
+type VersionResponse struct {
+	XMLName xml.Name `xml:"version"`
+	Value   string   `xml:",chardata"`
+}
+
 // charsetReader handles different character encodings for XML parsing
 func charsetReader(charset string, input io.Reader) (io.Reader, error) {
 	switch strings.ToLower(charset) {
@@ -248,13 +254,63 @@ func (c *Client) makeRequest(endpoint string, params map[string]string) (*APIRes
 	return &result, nil
 }
 
+// makeRawRequest performs an HTTP request and returns raw XML bytes
+func (c *Client) makeRawRequest(endpoint string, params map[string]string) ([]byte, error) {
+	u, err := url.Parse(fmt.Sprintf("%s/addons/xmlapi/%s", c.BaseURL, endpoint))
+	if err != nil {
+		return nil, fmt.Errorf("invalid URL: %w", err)
+	}
+
+	q := u.Query()
+	q.Set("sid", c.Token)
+
+	for key, value := range params {
+		q.Set(key, value)
+	}
+
+	u.RawQuery = q.Encode()
+
+	resp, err := c.HTTPClient.Get(u.String())
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP error: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Convert to UTF-8 if needed
+	utf8Body, err := convertToUTF8(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert encoding: %w", err)
+	}
+
+	return utf8Body, nil
+}
+
 // GetVersion returns the XML-API version
 func (c *Client) GetVersion() (string, error) {
-	resp, err := c.makeRequest("version.cgi", nil)
+	body, err := c.makeRawRequest("version.cgi", nil)
 	if err != nil {
 		return "", err
 	}
-	return resp.Version, nil
+
+	// Create XML decoder with charset reader support
+	decoder := xml.NewDecoder(bytes.NewReader(body))
+	decoder.CharsetReader = charsetReader
+
+	var versionResp VersionResponse
+	if err := decoder.Decode(&versionResp); err != nil {
+		return "", fmt.Errorf("failed to parse version XML: %w", err)
+	}
+
+	return strings.TrimSpace(versionResp.Value), nil
 }
 
 // GetDeviceList returns all devices with their channels
